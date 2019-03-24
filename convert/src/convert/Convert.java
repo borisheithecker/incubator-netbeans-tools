@@ -37,7 +37,7 @@ public class Convert {
             "|" +
             "\\QCopyright (c) <YEARS> Oracle and/or its affiliates. All rights reserved.\\E\\s*" +
             "|" +
-            "\\QCopyright \u00A9 <YEARS> Oracle and/or its affiliates. All rights reserved.\\E\\s*" +
+            "\\QCopyright \\u00A9 <YEARS> Oracle and/or its affiliates. All rights reserved.\\E\\s*" +
             "|" +
             "\\QCopyright <YEARS> Sun Microsystems, Inc. All rights reserved.\\E\\s*" +
             ")" +
@@ -46,6 +46,8 @@ public class Convert {
             "\\QThe contents of this file are subject to the terms of either the GNU General Public License Version 2 only (\"GPL\") or the Common Development and Distribution License(\"CDDL\") (collectively, the \"License\"). You may not use this file except in compliance with the License. You can obtain a copy of the License at http://www.netbeans.org/cddl-gplv2.html or nbbuild/licenses/CDDL-GPL-2-CP. See the License for the specific language governing permissions and limitations under the License. When distributing the software, include this License Header Notice in each file and include the License file at nbbuild/licenses/CDDL-GPL-2-CP. Oracle designates this particular file as subject to the \"Classpath\" exception as provided by Oracle in the GPL Version 2 section of the License file that accompanied this code. If applicable, add the following below the License Header, with the fields enclosed by brackets [] replaced by your own identifying information: \"Portions Copyrighted [year] [name of copyright owner]\"\\E\\s*" +
             "|" +
             "\\QThe contents of this file are subject to the terms of either the GNU General Public License Version 2 only (\"GPL\") or the Common Development and Distribution License(\"CDDL\") (collectively, the \"License\"). You may not use this file except in compliance with the License. You can obtain x copy of the License at http://www.netbeans.org/cddl-gplv2.html or nbbuild/licenses/CDDL-GPL-2-CP. See the License for the specific language governing permissions and limitations under the License. When distributing the software, include this License Header Notice in each file and include the License file at nbbuild/licenses/CDDL-GPL-2-CP. Oracle designates this particular file as subject to the \"Classpath\" exception as provided by Oracle in the GPL Version 2 section of the License file that accompanied this code. If applicable, add the following below the License Header, with the fields enclosed by brackets [] replaced by your own identifying information: \"Portions Copyrighted [year] [name of copyright owner]\"\\E\\s*" + //note: typo "x copy" instead of "a copy"
+            "|" +
+            "\\QThe contents of this file are subject to the terms of either the GNU General Public License Version 2 only (\"GPL\") or the Common Development and Distribution License(\"CDDL\") (collectively, the \"License\"). You may not use this file except in compliance with the License. You can obtain a copy of the License at http://www.netbeans.org/cddl-gplv2.html or nbbuild/licenses/CDDL-GPL-2-CP. See the License for the specific language governing permissions and limitations under the License. When distributing the software, include this License Header Notice in each file and include the License file at nbbuild/licenses/CDDL-GPL-2-CP. Oracle designates this particular file as subject to the \"Classpath\" exception as provided by Sun in the GPL Version 2 section of the License file that accompanied this code. If applicable, add the following below the License Header, with the fields enclosed by brackets [] replaced by your own identifying information: \"Portions Copyrighted [year] [name of copyright owner]\"\\E\\s*" + //note: typo "as provided by Sun in the GPL Version 2" instead of "as provided by Oracle in the GPL Version 2"
             "|" +
             "\\QThe contents of this file are subject to the terms of either the GNU General Public License Version 2 only (\"GPL\") or the Common Development and Distribution License(\"CDDL\") (collectively, the \"License\"). You may not use this file except in compliance with the License. You can obtain a copy of the License at http://www.netbeans.org/cddl-gplv2.html or nbbuild/licenses/CDDL-GPL-2-CP. See the License for the specific language governing permissions and limitations under the License. When distributing the software, include this License Header Notice in each file and include the License file at nbbuild/licenses/CDDL-GPL-2-CP. Sun designates this particular file as subject to the \"Classpath\" exception as provided by Sun in the GPL Version 2 section of the License file that accompanied this code. If applicable, add the following below the License Header, with the fields enclosed by brackets [] replaced by your own identifying information: \"Portions Copyrighted [year] [name of copyright owner]\"\\E\\s*" +
             "|" +
@@ -149,7 +151,7 @@ public class Convert {
             "\n" +
             "-->";
 
-    private static final String BUNDLE_OUTPUT =
+    static final String BUNDLE_OUTPUT =
             "# Licensed to the Apache Software Foundation (ASF) under one\n" +
             "# or more contributor license agreements.  See the NOTICE file\n" +
             "# distributed with this work for additional information\n" +
@@ -203,46 +205,46 @@ public class Convert {
             "@rem specific language governing permissions and limitations\n" +
             "@rem under the License.\n";
 
+    static Pattern headerPattern1 = Pattern.compile(LICENSE_INPUT_PATTERN1, Pattern.MULTILINE);
+    static Pattern headerPattern2 = Pattern.compile(LICENSE_INPUT_PATTERN2, Pattern.MULTILINE);
+
     public static void main(String[] args) throws IOException {
         if (args.length != 1 && args.length != 2) {
             System.err.println("Use: Convert <source-directory> [<statistics-file>]");
-            return ;
+            return;
         }
-        Pattern headerPattern1 = Pattern.compile(LICENSE_INPUT_PATTERN1, Pattern.MULTILINE);
-        Pattern headerPattern2 = Pattern.compile(LICENSE_INPUT_PATTERN2, Pattern.MULTILINE);
         Path root = Paths.get(args[0]);
         int[] count = new int[1];
         Set<String> converted = new HashSet<>();
         Set<String> cddlNoRewrite = new HashSet<>();
         Set<String> noCDDL = new HashSet<>();
         Files.find(root, Integer.MAX_VALUE, (p, attr) -> attr.isRegularFile())
-             .forEach(p -> {
-                try {
-                    String path = root.relativize(p).toString();
-                    String code = new String(Files.readAllBytes(p));
-                    boolean success = false;
-                    CategorizeLicenses.Description lic = CategorizeLicenses.snipUnifiedLicenseOrNull(code, p);
+                .forEach(p -> {
+                    try {
+                        String path = root.relativize(p).toString();
+                        String code = new String(Files.readAllBytes(p));
+                        boolean success = false;
+                        CategorizeLicenses.Description lic = CategorizeLicenses.snipUnifiedLicenseOrNull(code, p);
 
-                    if (lic != null) {
-                        if (headerPattern1.matcher(lic.header).matches() ||
-                            headerPattern2.matcher(lic.header).matches()) {
-                            success = fixHeader(p, code, lic);
-                            count[0]++;
+                        if (lic != null) {
+                            if (isValidLicenseHeader(lic)) {
+                                success = fixHeader(p, code, lic);
+                                count[0]++;
+                            }
                         }
-                    }
 
-                    if (success) {
-                        converted.add(path);
-                    } else if (code.contains("CDDL")) {
-                        cddlNoRewrite.add(path);
-                    } else {
-                        noCDDL.add(path);
+                        if (success) {
+                            converted.add(path);
+                        } else if (code.contains("CDDL")) {
+                            cddlNoRewrite.add(path);
+                        } else {
+                            noCDDL.add(path);
+                        }
+                    } catch (IOException ex) {
+                        throw new IllegalStateException(ex);
                     }
-                } catch (IOException ex) {
-                    throw new IllegalStateException(ex);
-                }
-             });
-        
+                });
+
         System.err.println("converted: " + count[0]);
 
         if (args.length == 2) {
@@ -262,6 +264,11 @@ public class Convert {
         }
     }
 
+    static boolean isValidLicenseHeader(Description lic) {
+        return lic != null && (headerPattern1.matcher(lic.header).matches()
+                || headerPattern2.matcher(lic.header).matches());
+    }
+
     private static void dumpFiles(Writer out, Set<String> paths) throws IOException {
         paths.stream().sorted().forEach(p -> {
             try {
@@ -274,7 +281,7 @@ public class Convert {
 
         out.write("\n");
     }
-    
+
     public static boolean fixHeader(Path file, String code, Description desc) {
         String outputLicense;
         switch (desc.commentType) {
@@ -287,7 +294,7 @@ public class Convert {
                 System.err.println("cannot rewrite: " + file);
                 return false;
         }
-        
+
         try (Writer out = Files.newBufferedWriter(file)) {
             String newCode = code.substring(0, desc.start) + outputLicense + code.substring(desc.end);
             out.write(newCode);
@@ -296,5 +303,5 @@ public class Convert {
             throw new IllegalStateException(ex);
         }
     }
-    
+
 }
