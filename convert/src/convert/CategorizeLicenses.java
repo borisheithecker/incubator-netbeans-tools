@@ -44,14 +44,15 @@ public class CategorizeLicenses {
     public static void main(String[] args) throws IOException {
         if (args.length != 2) {
             System.err.println("Use: CategorizeLicenses <source-directory> <target-directory>");
-            return ;
+            return;
         }
         Path root = Paths.get(args[0]);
         int[] recognizedCount = new int[1];
         Map<String, List<String>> licenses = new HashMap<>();
         Map<String, List<String>> paragraphs = new HashMap<>();
-        Set<String> noCDDL = new HashSet<>();
+        Set<String> noCDDLNoSun = new HashSet<>();
         Set<String> cddlNotRecognized = new HashSet<>();
+        Set<String> sun = new HashSet<>();
         Files.find(root, Integer.MAX_VALUE, (p, attr) -> attr.isRegularFile())
                 .forEach(p -> {
                     try {
@@ -63,17 +64,34 @@ public class CategorizeLicenses {
 
                             if (lic != null) {
                                 recognizedCount[0]++;
-                            licenses.computeIfAbsent(lic.getInfo(), l -> new ArrayList<>()).add(path);
-                            for (String par : lic.header.split("\n")) {
+                                licenses.computeIfAbsent(lic.getInfo(), l -> new ArrayList<>()).add(path);
+                                for (String par : lic.header.split("\n")) {
                                     paragraphs.computeIfAbsent(par, l -> new ArrayList<>()).add(path);
                                 }
-                            return ;
+                                return;
                             }
 
                             cddlNotRecognized.add(path);
-                        return ;
+                            return;
                         }
-                        noCDDL.add(path);
+
+                        if (code.contains("Sun")) {
+                            Description lic = snipUnifiedLicenseOrNull(code, p);
+
+                            if (lic != null) {
+                                recognizedCount[0]++;
+                                licenses.computeIfAbsent(lic.getInfo(), l -> new ArrayList<>()).add(path);
+                                for (String par : lic.header.split("\n")) {
+                                    paragraphs.computeIfAbsent(par, l -> new ArrayList<>()).add(path);
+                                }
+                                return;
+                            }
+
+                            sun.add(path);
+                            return;
+                        }
+
+                        noCDDLNoSun.add(path);
                     } catch (IOException ex) {
                         ex.printStackTrace();
                     }
@@ -83,7 +101,7 @@ public class CategorizeLicenses {
 
         int i = 0;
         for (Map.Entry<String, List<String>> e : licenses.entrySet()) {
-            try (Writer w = Files.newBufferedWriter(target.resolve("lic" + i++))) {
+            try ( Writer w = Files.newBufferedWriter(target.resolve("lic" + i++))) {
                 w.write(e.getKey());
                 w.write("\n\n");
                 for (String file : e.getValue()) {
@@ -97,19 +115,21 @@ public class CategorizeLicenses {
         System.err.println("paragraphs count: " + paragraphs.size());
 
         System.err.println("cddl, unrecognized file: " + cddlNotRecognized.size());
-        System.err.println("no cddl license: " + noCDDL.size());
+        System.err.println("sun, unrecognized file: " + sun.size());
+        System.err.println("no cddl or sun license: " + noCDDLNoSun.size());
 
         dump(licenses, target, "lic");
         dump(paragraphs, target, "par");
         dump(Collections.singletonMap("Files which contain string CDDL, but their comment structure is not (yet) recognized.", cddlNotRecognized), target, "have-cddl-not-recognized-filetype");
-        dump(Collections.singletonMap("Files which do not contain string CDDL", noCDDL), target, "do-not-have-cddl");
+        dump(Collections.singletonMap("Files which contain string Sun, but their comment structure is not (yet) recognized.", sun), target, "have-sun-not-recognized-filetype");
+        dump(Collections.singletonMap("Files which do not contain string CDDL or Sun", noCDDLNoSun), target, "do-not-have-cddl-or-sun");
     }
     private static final Pattern YEARS_PATTERN = Pattern.compile("[12][019][0-9][0-9]([ \t]*[-,/][ \t]*[12][019][0-9][0-9])?");
 
     private static void dump(Map<String, ? extends Collection<String>> cat, Path target, String name) throws IOException {
         int i = 0;
         for (Map.Entry<String, ? extends Collection<String>> e : cat.entrySet()) {
-            try (Writer w = Files.newBufferedWriter(target.resolve(name + i++))) {
+            try ( Writer w = Files.newBufferedWriter(target.resolve(name + i++))) {
                 w.write(e.getKey());
                 w.write("\n\n");
                 w.write("files:\n");
@@ -162,18 +182,24 @@ public class CategorizeLicenses {
     public static Description snipLicense(String code, String commentStart, String commentEnd, String normalizeLines, CommentType commentType) {
         Matcher startM = Pattern.compile(commentStart).matcher(code);
         if (!startM.find() || startM.start() > LIMIT) //only first 150 characters
+        {
             return null;
+        }
         Matcher endM = Pattern.compile(commentEnd).matcher(code);
-        if (!endM.find(startM.end()))
+        if (!endM.find(startM.end())) {
             return null;
+        }
         String lic = code.substring(startM.end(), endM.start());
         if (!isLicenseText(lic)) {
             startM = Pattern.compile(commentStart).matcher(code);
             if (!startM.find(endM.end()) || startM.start() > LIMIT) //only first 150 characters
+            {
                 return null;
+            }
             endM = Pattern.compile(commentEnd).matcher(code);
-            if (!endM.find(startM.end()))
+            if (!endM.find(startM.end())) {
                 return null;
+            }
             lic = code.substring(startM.end(), endM.start());
         }
         if (normalizeLines != null) {
@@ -197,19 +223,23 @@ public class CategorizeLicenses {
         boolean startOfLic = false;
         int compromisingLineNumber = -1;
         String compromisingLine = null;
+        boolean possiblyCodeBeforeLic = false;
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
             pos = next;
             next += line.length() + ((i + 1) < lines.length ? 1 : 0);
             line = line.trim();
-            if (firstLine && firstLinePattern != null && Pattern.compile(firstLinePattern).matcher(line).matches())
+            if (firstLine && firstLinePattern != null && Pattern.compile(firstLinePattern).matcher(line).matches()) {
                 continue;
-            if (firstLine && line.trim().isEmpty())
+            }
+            if (firstLine && line.trim().isEmpty()) {
                 continue;
+            }
             if (line.startsWith(commentMarker)) {
                 String part = line.substring(commentMarker.length()).trim();
-                if (firstLine && part.isEmpty())
+                if (firstLine && part.isEmpty()) {
                     continue;
+                }
                 if (firstLine) {
                     //Start collecting line of the license only if this line is really the beginning of the license text.
                     if (!isStartOfLicense(part)) {
@@ -219,30 +249,39 @@ public class CategorizeLicenses {
                     startOfLic = true;
                 }
                 firstLine = false;
-                
+
                 res.append(part);
                 res.append("\n");
                 if (!part.isEmpty()) {
                     end = next;
                 }
-                
-                final Description ret = createUnifiedDescriptionOrNull(start, end, res.toString(), commentType);
-                if (Convert.isValidLicenseHeader(ret)) {
-                    ret.valid = true;
-                    return ret;
-                }
-                
+
+//                final Description ret = createUnifiedDescriptionOrNull(start, end, res.toString(), commentType);
+//                if (Convert.isValidLicenseHeader(ret)) {
+//                    ret.valid = true;
+//                    ret.possiblyCodeBeforeLic = possiblyCodeBeforeLic;
+//                    return ret;
+//                }
                 final boolean before = startOfLic;
-                startOfLic = startOfLic && isStartOfLicense(res.toString()); 
-                if(before && !startOfLic) {
+                startOfLic = startOfLic && isStartOfLicense(res.toString());
+                if (before && !startOfLic) {
                     compromisingLine = line;
                     compromisingLineNumber = i;
                 }
-            } else if (line.trim().isEmpty()) {
-                //Skip empty lines
             } else {
+                if (line.trim().isEmpty()) {
+                    //Skip empty lines
+                    continue;
+                } else if (firstLine) {
+                    //Handle cases where lines of code are inserted before the license header
+                    possiblyCodeBeforeLic = true;
+                    continue;
+                }
                 final Description ret = createUnifiedDescriptionOrNull(start, end, res.toString(), commentType);
-                if (compromisingLine != null) {
+                if (Convert.isValidLicenseHeader(ret)) {
+                    ret.valid = true;
+                    ret.possiblyCodeBeforeLic = possiblyCodeBeforeLic;
+                } else if (compromisingLine != null) {
                     ret.compromisingLine = compromisingLine;
                     ret.compromisingLineNumber = compromisingLineNumber;
                 }
@@ -250,18 +289,23 @@ public class CategorizeLicenses {
             }
         }
         final Description ret = createUnifiedDescriptionOrNull(start, end, res.toString(), commentType);
-        if (compromisingLine != null) {
+        if (Convert.isValidLicenseHeader(ret)) {
+            ret.valid = true;
+            ret.possiblyCodeBeforeLic = possiblyCodeBeforeLic;
+        } else if (compromisingLine != null) {
             ret.compromisingLine = compromisingLine;
             ret.compromisingLineNumber = compromisingLineNumber;
         }
         return ret;
     }
-    
+
     static boolean isStartOfLicense(String part) {
         final Matcher m1 = Convert.headerPattern1.matcher(normalize(part));
         final Matcher m2 = Convert.headerPattern2.matcher(normalize(part));
+        final Matcher m3 = Convert.headerPatternSPN.matcher(normalize(part));
         final boolean isStartOfLicense = !m1.matches() && m1.hitEnd()
-                || !m2.matches() && m2.hitEnd();
+                || !m2.matches() && m2.hitEnd()
+                || !m3.matches() && m3.hitEnd();
         return isStartOfLicense;
     }
 
@@ -288,18 +332,24 @@ public class CategorizeLicenses {
     }
 
     private static boolean isLicenseText(String text) {
-        return text.contains("CDDL") || text.contains("Redistribution") || text.contains("Apache License");
+        return text.contains("CDDL")
+                || text.contains("Sun Public License")
+                || text.contains("Redistribution")
+                || text.contains("Apache License");
     }
 
     public static class Description {
+
         public final int start;
         public final int end;
         public final String header;
         public final CommentType commentType;
-        
+
         public int compromisingLineNumber = -1;
         public String compromisingLine = null;
         boolean valid;
+
+        boolean possiblyCodeBeforeLic = false;
 
         public Description(int start, int end, String header, CommentType commentType) {
             this.start = start;
@@ -316,7 +366,13 @@ public class CategorizeLicenses {
                 sj.add(msg);
                 sj.add(compromisingLine);
             }
-            if(valid) sj.add("This is a valid license.");
+            if (valid) {
+                if (possiblyCodeBeforeLic) {
+                    final String msg = "Possibly contains lines of code before the start of the header at line " + this.start;
+                    sj.add(msg);
+                }
+                sj.add("This is a valid license.");
+            }
             return sj.toString();
         }
     }
