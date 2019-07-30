@@ -34,6 +34,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
 import java.util.function.Function;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -224,6 +226,7 @@ public class CategorizeLicenses {
         int compromisingLineNumber = -1;
         String compromisingLine = null;
         boolean possiblyCodeBeforeLic = false;
+        Description lastValid = null;
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
             pos = next;
@@ -255,15 +258,28 @@ public class CategorizeLicenses {
                 if (!part.isEmpty()) {
                     end = next;
                 }
+                if ("Nodes".equals(part)) {
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException ex) {
+                        Logger.getLogger(CategorizeLicenses.class.getName()).log(Level.SEVERE, null, ex);
+                    }
+                }
 
-//                final Description ret = createUnifiedDescriptionOrNull(start, end, res.toString(), commentType);
-//                if (Convert.isValidLicenseHeader(ret)) {
-//                    ret.valid = true;
-//                    ret.possiblyCodeBeforeLic = possiblyCodeBeforeLic;
-//                    return ret;
-//                }
+                final Description ret = createUnifiedDescriptionOrNull(start, end, res.toString(), commentType);
+                final boolean val = Convert.isValidLicenseHeader(ret);
+                if (val) {
+                    ret.valid = true;
+                    ret.possiblyCodeBeforeLic = possiblyCodeBeforeLic;
+                    lastValid = ret;
+                    compromisingLine = null;
+                    continue;
+                }
                 final boolean before = startOfLic;
                 startOfLic = startOfLic && isStartOfLicense(res.toString());
+                if (!startOfLic || val) {
+                    break;
+                }
                 if (before && !startOfLic) {
                     compromisingLine = line;
                     compromisingLineNumber = i;
@@ -277,24 +293,22 @@ public class CategorizeLicenses {
                     possiblyCodeBeforeLic = true;
                     continue;
                 }
-                final Description ret = createUnifiedDescriptionOrNull(start, end, res.toString(), commentType);
-                if (Convert.isValidLicenseHeader(ret)) {
-                    ret.valid = true;
-                    ret.possiblyCodeBeforeLic = possiblyCodeBeforeLic;
-                } else if (compromisingLine != null) {
-                    ret.compromisingLine = compromisingLine;
-                    ret.compromisingLineNumber = compromisingLineNumber;
-                }
-                return ret;
+                break;
             }
         }
         final Description ret = createUnifiedDescriptionOrNull(start, end, res.toString(), commentType);
-        if (Convert.isValidLicenseHeader(ret)) {
-            ret.valid = true;
-            ret.possiblyCodeBeforeLic = possiblyCodeBeforeLic;
-        } else if (compromisingLine != null) {
-            ret.compromisingLine = compromisingLine;
-            ret.compromisingLineNumber = compromisingLineNumber;
+        if (ret != null) {
+            if (Convert.isValidLicenseHeader(ret)) {
+                ret.valid = true;
+                ret.possiblyCodeBeforeLic = possiblyCodeBeforeLic;
+            } else {
+                if (compromisingLine != null) {
+                    ret.compromisingLine = compromisingLine;
+                    ret.compromisingLineNumber = compromisingLineNumber;
+                } else if (lastValid != null) {
+                    return lastValid;
+                }
+            }
         }
         return ret;
     }
